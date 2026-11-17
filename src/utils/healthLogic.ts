@@ -5,6 +5,7 @@ import type {
   HealthTone,
   MedicalRecordProfile,
   MedicationDose,
+  SmartHealthState,
   SosContact,
 } from '../types/health';
 
@@ -344,5 +345,166 @@ export function normalizeDocCategoryLabel(
     default:
       return 'Chăm sóc hàng ngày';
   }
+}
+
+export function createSeedSmartHealthState(now: Date = new Date()): SmartHealthState {
+  const nowTime = formatClockTime(now);
+  const initialEnv: EnvironmentReading = {
+    aqi: 32,
+    mq135Ppm: 168,
+    temperature: 26.4,
+    humidity: 58,
+    source: 'seed',
+    updatedAt: nowTime,
+  };
+
+  return {
+    environment: initialEnv,
+    purifier: computeAutoPurifierState(
+      initialEnv.aqi,
+      initialEnv.temperature,
+      initialEnv.humidity
+    ),
+    doses: [
+      {
+        id: 'tray-1',
+        trayNumber: 1,
+        period: 'Sáng',
+        time: '07:00',
+        medicineName: 'Vitamin B & Bảo Vệ Dạ Dày',
+        dosageNote: '1 viên với 150ml nước ấm',
+        preMealNote: 'Uống trước ăn sáng 30 phút',
+        servoAngle: 0,
+        taken: false,
+        alarmActive: false,
+      },
+      {
+        id: 'tray-2',
+        trayNumber: 2,
+        period: 'Trưa',
+        time: '12:00',
+        medicineName: 'Thuốc Hỗ Trợ Tim Mạch',
+        dosageNote: '1 viên đúng cữ trưa',
+        preMealNote: 'Ăn no trước khi uống thuốc',
+        servoAngle: 45,
+        taken: false,
+        alarmActive: false,
+      },
+      {
+        id: 'tray-3',
+        trayNumber: 3,
+        period: 'Chiều',
+        time: '17:30',
+        medicineName: 'Thuốc Ổn Định Đường Huyết',
+        dosageNote: '1 viên buổi chiều',
+        preMealNote: 'Đo đường huyết & ăn nhẹ trước khi uống',
+        servoAngle: 90,
+        taken: false,
+        alarmActive: false,
+      },
+      {
+        id: 'tray-4',
+        trayNumber: 4,
+        period: 'Tối',
+        time: '20:30',
+        medicineName: 'Thuốc Hoạt Huyết & Ngủ Ngon',
+        dosageNote: '1 viên buổi tối',
+        preMealNote: 'Tránh uống trà đậm hoặc cà phê trước khi uống',
+        servoAngle: 135,
+        taken: false,
+        alarmActive: false,
+      },
+    ],
+    sosContacts: [],
+    emergencyCard: {
+      fullName: '',
+      bloodType: '',
+      conditions: '',
+      allergies: '',
+    },
+    medicalRecord: createEmptyMedicalRecord(),
+    feelingLogs: [],
+    sosEvents: [],
+    customDocs: [],
+    familyAlerts: [],
+    pendingEsp32Commands: [],
+    esp32LastSeen: null,
+    setupCompleted: true,
+  };
+}
+
+export function buildLocalDoctorReply(
+  question: string,
+  env: EnvironmentReading,
+  purifier: AutoPurifierStatus
+): string {
+  const q = question.toLowerCase();
+
+  if (
+    q.includes('huyết áp') ||
+    q.includes('chóng mặt') ||
+    q.includes('chống mặt') ||
+    q.includes('hoa mắt') ||
+    q.includes('choáng')
+  ) {
+    return [
+      'Với tình trạng đang hơi mệt, chóng mặt kèm bệnh nền huyết áp cao, bác cần làm ngay các bước sau:',
+      '1. Ngồi hoặc nằm nghỉ ngay tại chỗ an toàn, kê đầu hơi cao và thả lỏng, tuyệt đối không đứng dậy đột ngột để tránh té ngã.',
+      '2. Nếu có máy đo huyết áp tại nhà, nhờ người thân đo lại ngay sau khi nghỉ 5 phút và giữ bình tĩnh, thở chậm sâu.',
+      '3. Không tự ý uống thêm hoặc uống gấp đôi thuốc huyết áp khi chưa biết chỉ số đo hiện tại; có thể nhấp từng ngụm nước lọc nhỏ.',
+      '4. Gọi ngay người thân hoặc bấm nút Cấp cứu SOS / 115 nếu xuất hiện bất kỳ dấu hiệu nào như: huyết áp tăng vọt (từ 180/120 mmHg trở lên), đau tức ngực, khó thở, tê yếu tay chân, méo miệng hoặc nói khó.',
+    ].join('\n');
+  }
+
+  if (q.includes('khó thở') || q.includes('đau ngực') || q.includes('tức ngực') || q.includes('tim')) {
+    return [
+      'Khi thấy tức ngực hoặc khó thở, bác nên xử trí ngay:',
+      '1. Dừng mọi hoạt động, ngồi thẳng hoặc tựa lưng góc 45–60 độ nơi thoáng khí, nới lỏng cổ áo.',
+      '2. Tập thở chúm môi nhẹ nhàng (hít vào bằng mũi 2 giây, thổi nhẹ ra qua miệng 4 giây).',
+      '3. Báo ngay cho người thân bên cạnh. Nếu cơn đau ngực lan lên vai/cổ, vã mồ hôi lạnh hoặc khó thở tăng sau 5 phút, hãy bấm nút SOS / gọi 115 ngay lập tức.',
+    ].join('\n');
+  }
+
+  if (q.includes('đường huyết') || q.includes('tiểu đường') || q.includes('run tay') || q.includes('vã mồ hôi')) {
+    return [
+      'Khi có biểu hiện mệt, run tay, vã mồ hôi ở người bệnh tiểu đường:',
+      '1. Ngồi yên xuống ngay và đo đường huyết mao mạch nếu có máy.',
+      '2. Nếu vẫn tỉnh táo hoàn toàn, uống ngay nửa cốc nước đường ấm hoặc 3–4 viên kẹo đường (quy tắc 15–15), sau 15 phút kiểm tra lại và ăn thêm bữa nhẹ.',
+      '3. Tuyệt đối không uống thêm thuốc tiểu đường lúc đang mệt lả. Nếu có dấu hiệu lơ mơ, gọi ngay người thân và cấp cứu 115.',
+    ].join('\n');
+  }
+
+  if (q.includes('khay') || q.includes('thuốc') || q.includes('quên liều') || q.includes('trước ăn') || q.includes('sau ăn')) {
+    return [
+      'Về cách uống thuốc an toàn theo 4 khay (Sáng – Trưa – Chiều – Tối):',
+      '1. Kiểm tra kỹ ghi chú "Lưu ý trước khi uống" của từng túm thuốc (ví dụ: ăn no trước khi uống hay uống trước ăn 30 phút).',
+      '2. Uống thuốc ở tư thế ngồi thẳng với 150–200 ml nước lọc ấm.',
+      '3. Nếu lỡ quên một cữ và gần sát giờ cữ tiếp theo, hãy bỏ qua cữ đã quên — tuyệt đối không uống gấp đôi liều.',
+    ].join('\n');
+  }
+
+  if (q.includes('không khí') || q.includes('ô nhiễm') || q.includes('nhiệt độ') || q.includes('lọc') || q.includes('aqi')) {
+    return [
+      `Hiện chất lượng không khí phòng là ${env.aqi} AQI, nhiệt độ ${env.temperature.toFixed(1)}°C, độ ẩm ${env.humidity}% và máy lọc tự động đang ở chế độ "${purifier.levelLabel}".`,
+      '1. Nếu chỉ số AQI cao trên 100, hãy giữ máy lọc chạy tự động ở mức cao và kiểm tra nguồn khói bụi trong nhà.',
+      '2. Giữ nhiệt độ phòng ngủ dễ chịu khoảng 24–28°C và uống đủ nước ấm để bảo vệ đường hô hấp.',
+    ].join('\n');
+  }
+
+  if (q.includes('xương') || q.includes('khớp') || q.includes('nhức') || q.includes('tê')) {
+    return [
+      'Khi bị đau nhức xương khớp:',
+      '1. Giữ ấm vùng khớp đau (nhất là khớp gối và bàn chân khi trời lạnh ẩm), tránh ngồi xổm hoặc mang vác nặng.',
+      '2. Nghỉ ngơi nhẹ nhàng, có thể chườm ấm 10–15 phút nếu không có sưng nóng đỏ cấp tính.',
+      '3. Không tự ý uống thuốc giảm đau không rõ nguồn gốc; nếu khớp sưng nóng nhiều hoặc đau tăng nặng, hãy liên hệ bác sĩ khám trực tiếp.',
+    ].join('\n');
+  }
+
+  return [
+    `Bác sĩ đã ghi nhận tình trạng "${question}". Bác nên làm ngay các bước cơ bản sau:`,
+    '1. Ngồi hoặc nằm nghỉ ngơi ở nơi thoáng mát, nới lỏng quần áo và uống từng ngụm nước ấm nhỏ.',
+    '2. Nhờ người thân kiểm tra lại nhiệt độ cơ thể, huyết áp (nếu có máy) và xem bác đã ăn uống hoặc uống đúng cữ thuốc hôm nay chưa.',
+    '3. Nếu triệu chứng không giảm sau 15–30 phút nghỉ ngơi hoặc kèm khó thở, đau ngực, chóng mặt nặng hay lơ mơ, hãy bấm ngay Mục SOS Khẩn cấp hoặc gọi 115.',
+  ].join('\n');
 }
 

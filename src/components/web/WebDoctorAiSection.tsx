@@ -1,5 +1,6 @@
 import { Info, Mic, MicOff, Send, Stethoscope, Volume2, VolumeX } from 'lucide-react';
 import { useRef, useState } from 'react';
+import { askDoctorAi } from '../../services/smartHealthClient';
 import {
   speakVietnamese,
   startVietnameseListening,
@@ -78,15 +79,7 @@ export function WebDoctorAiSection({ darkMode }: WebDoctorAiSectionProps) {
     setSpeakingAnswer(false);
 
     try {
-      const res = await fetch('/api/doctor/ask', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: clean }),
-      });
-      const data = await res.json();
-      const reply =
-        data.answer ||
-        'Bác sĩ đã nhận câu hỏi. Nếu có dấu hiệu mệt hoặc khó thở, hãy bấm nút Đỏ Cấp Cứu SOS ngay.';
+      const reply = await askDoctorAi(clean);
       setAnswer(reply);
       setQuestion('');
       speakVietnamese(reply, {

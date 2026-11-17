@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { useRef, useState } from 'react';
+import { loginAccount, registerAccount } from '../../services/smartHealthClient';
 import type { AuthUser, SmartHealthState } from '../../types/health';
 
 interface WebAuthModalProps {
@@ -76,23 +77,16 @@ export function WebAuthModal({
     setLoginLoading(true);
     setLoginError(null);
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          identifier: cleanPhone,
-          password: loginPassword,
-          pin: cleanPin,
-        }),
+      const data = await loginAccount({
+        identifier: cleanPhone,
+        password: loginPassword,
+        pin: cleanPin,
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setLoginError(data.error || 'Đăng nhập chưa thành công.');
-        return;
-      }
       onAuthSuccess({ token: data.token, user: data.user, state: data.state });
-    } catch {
-      setLoginError('Không kết nối được máy chủ. Vui lòng thử lại.');
+    } catch (err) {
+      setLoginError(
+        err instanceof Error ? err.message : 'Đăng nhập chưa thành công.'
+      );
     } finally {
       setLoginLoading(false);
     }
@@ -141,26 +135,19 @@ export function WebAuthModal({
     setRegLoading(true);
     setRegError(null);
     try {
-      const res = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fullName: regFullName.trim(),
-          phone: regPhone.trim(),
-          username: regPhone.trim(),
-          password: regPassword,
-          pin,
-          role: 'caregiver',
-        }),
+      const data = await registerAccount({
+        fullName: regFullName.trim(),
+        phone: regPhone.trim(),
+        username: regPhone.trim(),
+        password: regPassword,
+        pin,
+        role: 'caregiver',
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setRegError(data.error || 'Đăng ký tài khoản chưa thành công.');
-        return;
-      }
       onAuthSuccess({ token: data.token, user: data.user, state: data.state });
-    } catch {
-      setRegError('Không kết nối được máy chủ. Vui lòng thử lại.');
+    } catch (err) {
+      setRegError(
+        err instanceof Error ? err.message : 'Đăng ký tài khoản chưa thành công.'
+      );
     } finally {
       setRegLoading(false);
     }

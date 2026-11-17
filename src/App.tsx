@@ -35,6 +35,24 @@ import type {
   SosContact,
 } from './types/health';
 import {
+  ackEsp32Commands,
+  acknowledgeAlert,
+  addCustomDocItem,
+  clearTrayIr,
+  deleteCustomDocItem,
+  fetchCurrentUser,
+  fetchHealthState,
+  logoutSession,
+  notifyPoorHealthAlert,
+  openTrayDose,
+  postSosEvent,
+  resetAllTrays,
+  saveHealthSettings,
+  sendEsp32Telemetry,
+  submitFeeling,
+  triggerTrayAlarm,
+} from './services/smartHealthClient';
+import {
   buildSmsHref,
   findDueTrayAlarms,
   formatClockTime,
@@ -129,9 +147,7 @@ export default function App() {
 
   const fetchState = useCallback(async () => {
     try {
-      const res = await fetch('/api/state');
-      if (!res.ok) throw new Error('Không thể tải dữ liệu');
-      const data = (await res.json()) as SmartHealthState;
+      const data = await fetchHealthState();
       setHealthState(data);
       setLoadError(null);
     } catch {
@@ -146,10 +162,8 @@ export default function App() {
       await fetchState();
       if (!authToken) return;
       try {
-        const res = await fetch('/api/auth/me', {
-          headers: { Authorization: `Bearer ${authToken}` },
-        });
-        if (!res.ok) {
+        const result = await fetchCurrentUser(authToken);
+        if (!result) {
           window.localStorage.removeItem(AUTH_TOKEN_KEY);
           if (active) {
             setAuthToken(null);
@@ -157,10 +171,9 @@ export default function App() {
           }
           return;
         }
-        const data = await res.json();
         if (active) {
-          setUser(data.user);
-          if (data.state) setHealthState(data.state);
+          setUser(result.user);
+          if (result.state) setHealthState(result.state);
         }
       } catch {
         // Keep public portal usable even if auth check fails
@@ -181,36 +194,21 @@ export default function App() {
   }, [fetchState]);
 
   const handleTriggerAlarm = useCallback(async (doseId: string) => {
-    const res = await fetch('/api/tray/trigger-alarm', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ doseId }),
-    });
-    const data = await res.json();
-    if (data.state) setHealthState(data.state);
+    const next = await triggerTrayAlarm(doseId);
+    setHealthState(next);
   }, []);
 
   const handleIrCleared = useCallback(async (doseId: string) => {
     stopSpeaking();
-    const res = await fetch('/api/tray/ir-cleared', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ doseId }),
-    });
-    const data = await res.json();
-    if (data.state) setHealthState(data.state);
+    const next = await clearTrayIr({ doseId });
+    setHealthState(next);
   }, []);
 
   const handleIrClearedByTrayNumber = useCallback(
     async (trayNumber: 1 | 2 | 3 | 4) => {
       stopSpeaking();
-      const res = await fetch('/api/tray/ir-cleared', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ trayNumber }),
-      });
-      const data = await res.json();
-      if (data.state) setHealthState(data.state);
+      const next = await clearTrayIr({ trayNumber });
+      setHealthState(next);
     },
     []
   );
@@ -267,54 +265,38 @@ export default function App() {
 
   const handleLogout = async () => {
     stopSpeaking();
-    if (authToken) {
-      await fetch('/api/auth/logout', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${authToken}` },
-      }).catch(() => undefined);
-    }
+    await logoutSession(authToken).catch(() => undefined);
     window.localStorage.removeItem(AUTH_TOKEN_KEY);
     setAuthToken(null);
     setUser(null);
   };
 
   const handleTakeDose = async (doseId: string) => {
-    const res = await fetch('/api/tray/open', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ doseId }),
-    });
-    const data = await res.json();
-    if (data.state) {
-      setHealthState(data.state);
+    const data = await openTrayDose(doseId);
+    setHealthState(data.state);
+    if (data.dose) {
       speakVietnamese(
-        `Đã mở khay số ${data.dose?.trayNumber || ''} và ghi nhận uống ${data.dose?.medicineName || 'thuốc'}.`
+        `Đã mở khay số ${data.dose.trayNumber || ''} và ghi nhận uống ${data.dose.medicineName || 'thuốc'}.`
       );
     }
   };
 
   const handleResetDoses = async () => {
     stopSpeaking();
-    const res = await fetch('/api/tray/reset', { method: 'POST' });
-    const data = await res.json();
-    if (data.state) setHealthState(data.state);
+    const next = await resetAllTrays();
+    setHealthState(next);
   };
 
   const handleSendFeeling = async (
     mood: FeelingMood | 'Ghi chú',
     note?: string
   ) => {
-    const res = await fetch('/api/feeling', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mood, ...(note ? { note } : {}) }),
-    });
-    const data = await res.json();
-    if (data.state) setHealthState(data.state);
+    const data = await submitFeeling(mood, note);
+    setHealthState(data.state);
     if (data.alert) {
       playAlertChime();
-      triggerBrowserWebNotification(data.alert as FamilyHealthAlert);
-      setActiveSmsModalAlert(data.alert as FamilyHealthAlert);
+      triggerBrowserWebNotification(data.alert);
+      setActiveSmsModalAlert(data.alert);
     }
   };
 
@@ -322,54 +304,28 @@ export default function App() {
     reason: string,
     note?: string
   ) => {
-    const res = await fetch('/api/alerts/notify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        severity: 'warning',
-        title: 'Sức khỏe người cao tuổi không ổn định — Cần kiểm tra',
-        reason,
-        ...(note ? { note } : {}),
-      }),
-    });
-    const data = await res.json();
-    if (data.state) setHealthState(data.state);
+    const data = await notifyPoorHealthAlert({ reason, note });
+    setHealthState(data.state);
     if (data.alert) {
       playAlertChime();
-      triggerBrowserWebNotification(data.alert as FamilyHealthAlert);
-      setActiveSmsModalAlert(data.alert as FamilyHealthAlert);
+      triggerBrowserWebNotification(data.alert);
+      setActiveSmsModalAlert(data.alert);
     }
   };
 
   const handleAckAlert = async (alertId?: string) => {
-    const res = await fetch('/api/alerts/ack', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ alertId }),
-    });
-    const data = await res.json();
-    if (data.state) setHealthState(data.state);
+    const next = await acknowledgeAlert(alertId);
+    setHealthState(next);
   };
 
   const handleAddCustomDoc = async (payload: NewCustomDocPayload) => {
-    const res = await fetch('/api/docs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || 'Không thể lưu tài liệu mới.');
-    }
-    if (data.state) setHealthState(data.state);
+    const next = await addCustomDocItem(payload);
+    setHealthState(next);
   };
 
   const handleDeleteCustomDoc = async (id: string) => {
-    const res = await fetch(`/api/docs/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-    });
-    const data = await res.json();
-    if (data.state) setHealthState(data.state);
+    const next = await deleteCustomDocItem(id);
+    setHealthState(next);
   };
 
   const handleSaveSettings = async (payload: {
@@ -378,13 +334,8 @@ export default function App() {
     doses?: MedicationDose[];
     medicalRecord?: MedicalRecordProfile;
   }) => {
-    const res = await fetch('/api/settings', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json();
-    if (data.state) setHealthState(data.state);
+    const next = await saveHealthSettings(payload);
+    setHealthState(next);
   };
 
   const handleAddQuickContact = async (name: string, phone: string) => {
@@ -409,51 +360,31 @@ export default function App() {
     humidity: number;
     source?: 'esp32-http' | 'esp32-serial';
   }) => {
-    const res = await fetch('/api/esp32/telemetry', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(packet),
-    });
-    const data = await res.json();
-    if (data.state) setHealthState(data.state);
+    const next = await sendEsp32Telemetry(packet);
+    setHealthState(next);
   };
 
   const handleAckCommands = async () => {
-    const res = await fetch('/api/esp32/commands/ack', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ all: true }),
-    });
-    const data = await res.json();
-    if (data.state) setHealthState(data.state);
+    const next = await ackEsp32Commands();
+    setHealthState(next);
   };
 
   const handleSosCancel = async () => {
     setSosOpen(false);
-    const res = await fetch('/api/sos', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'cancelled' }),
-    });
-    const data = await res.json();
-    if (data.state) setHealthState(data.state);
+    const data = await postSosEvent({ status: 'cancelled' });
+    setHealthState(data.state);
   };
 
   const handleSosDispatch = useCallback(
     async (opts?: { contactName?: string; sentCount?: number }) => {
-      const res = await fetch('/api/sos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          status: 'dispatched',
-          contactName: opts?.contactName,
-          sentCount: opts?.sentCount,
-        }),
+      const data = await postSosEvent({
+        status: 'dispatched',
+        contactName: opts?.contactName,
+        sentCount: opts?.sentCount,
       });
-      const data = await res.json();
-      if (data.state) setHealthState(data.state);
+      setHealthState(data.state);
       if (data.alert) {
-        triggerBrowserWebNotification(data.alert as FamilyHealthAlert);
+        triggerBrowserWebNotification(data.alert);
       }
     },
     []

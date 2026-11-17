@@ -2,11 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildHealthAlertSmsBody,
+  buildLocalDoctorReply,
   buildSmsHref,
   buildSpeechSummary,
   computeAutoPurifierState,
   computeSosTargetCount,
   createEmptyMedicalRecord,
+  createSeedSmartHealthState,
   evaluateAirQuality,
   evaluateDht22Comfort,
   findDueTrayAlarms,
@@ -228,4 +230,18 @@ test('buildHealthAlertSmsBody and buildSmsHref build clean SMS URI for family ph
 test('normalizeDocCategoryLabel returns proper Vietnamese category name', () => {
   assert.equal(normalizeDocCategoryLabel('emergency'), 'Cấp cứu & Đột quỵ');
   assert.equal(normalizeDocCategoryLabel('medication'), 'Uống thuốc an toàn');
+});
+
+test('createSeedSmartHealthState and buildLocalDoctorReply work consistently offline or online', () => {
+  const seed = createSeedSmartHealthState(new Date(2026, 10, 16, 9, 5));
+  assert.equal(seed.doses.length, 4);
+  assert.equal(seed.environment.updatedAt, '09:05');
+
+  const bpReply = buildLocalDoctorReply(
+    'Tui cảm thấy hơi mệt, chống mặt, tui có bệnh nền về huyết áp cao á, thì bây giờ tui cần làm gì',
+    seed.environment,
+    seed.purifier
+  );
+  assert.match(bpReply, /huyết áp/i);
+  assert.match(bpReply, /115/);
 });
