@@ -149,7 +149,20 @@ type ApiResult<T> =
   | { kind: 'api'; ok: boolean; status: number; data: T }
   | { kind: 'offline' };
 
-let staticHostingDetected = false;
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
+
+function isKnownStaticOriginWithoutBackend(): boolean {
+  if (API_BASE || typeof window === 'undefined') return false;
+  const host = window.location.hostname.toLowerCase();
+  return (
+    host.endsWith('.github.io') ||
+    host.endsWith('.netlify.app') ||
+    host.endsWith('.vercel.app') ||
+    host.endsWith('.pages.dev')
+  );
+}
+
+let staticHostingDetected = isKnownStaticOriginWithoutBackend();
 
 async function callBackendJson<T>(
   url: string,
@@ -159,10 +172,11 @@ async function callBackendJson<T>(
   if (staticHostingDetected) {
     return { kind: 'offline' };
   }
+  const targetUrl = API_BASE && url.startsWith('/') ? `${API_BASE}${url}` : url;
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { ...init, signal: controller.signal });
+    const res = await fetch(targetUrl, { ...init, signal: controller.signal });
     const contentType = res.headers.get('content-type') || '';
     if (!contentType.includes('application/json')) {
       staticHostingDetected = true;
